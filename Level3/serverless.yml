@@ -1,0 +1,123 @@
+# NOTE: update this with your service name
+service: Level3
+
+# Create an optimized package for our functions
+package:
+  individually: true
+
+plugins:
+  - serverless-bundle # Package our functions with Webpack
+  - serverless-offline
+  - serverless-dotenv-plugin # Load .env as environment variables
+  - serverless-domain-manager
+  - serverless-iam-roles-per-function
+
+provider:
+  name: aws
+  runtime: nodejs12.x
+  region: eu-west-2
+  profile: default
+  stage: ${opt:stage,'dev'}
+  tracing: true
+  variablesResolutionMode: 20210326
+  lambdaHashingVersion: 20201221
+  logs:
+    restApi: true
+  deploymentBucket:
+    name: # Deployment bucket name
+    serverSideEncryption: AES256
+  environment:
+    region: ${self:provider.region}
+  # 'iamRoleStatements' defines the permission policy for the Lambda function.
+  # In this case Lambda functions are granted with permissions to access DynamoDB.
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:DescribeTable
+        - dynamodb:Query
+        - dynamodb:Scan
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+        - dynamodb:UpdateItem
+        - dynamodb:DeleteItem
+      Resource: "arn:aws:dynamodb:eu-west-2:*:*"
+    - Effect: Allow
+      Action:
+        - lambda:GetAccountSettings
+        - lambda:GetAccountSettings
+        - lambda:GetEventSourceMapping
+        - lambda:GetFunction
+        - lambda:GetFunctionConfiguration
+        - lambda:GetFunctionCodeSigningConfig
+        - lambda:GetFunctionConcurrency           
+        - lambda:ListEventSourceMappings
+        - lambda:ListFunctions
+        - lambda:ListTags
+        - iam:ListRoles
+      Resource: "*"
+      
+custom:
+  dotenv:
+    path: .env
+  customDomain:
+    domainName: ${env:domainName}
+    stage: ${self:provider.stage}
+    basePath: ""
+    createRoute53Record: true
+    certificateArn: # SSL Certificate ARN
+    hostedZoneId: # Hosted Zone Id
+    hostedZonePrivate: false
+
+functions:
+  hello:
+    handler: handler.hello
+    role: AllLambdaFunctionsRole
+    events:
+      - http:
+          path: hello
+          method: get
+  #Add the following to the serverless.yml file under functions
+  create:
+    handler: create.main
+    role: AllLambdaFunctionsRole
+    events:
+      - http:
+          path: demo
+          method: post
+          cors:
+            origin: "*"
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+              - X-Amz-User-Agent
+            allowCredentials: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: CognitoUserPoolAuthorizer
+  addUserToGroup:
+    handler: addUserToGroup.handler
+    role: CognitoLambdaSignupUserRole
+    events:
+      - cognitoUserPool:
+          pool: MyUserPool
+          trigger: PostConfirmation
+          existing: false
+    environment:
+      groupName: "DemoAdministrators"
+# Create our resources with separate CloudFormation templates
+resources:
+  # All IAM Roles
+  - ${file(resources/iam-roles.yml)}
+  # Cognito
+  - ${file(resources/cognito-user-pool.yml)}
+  - ${file(resources/cognito-identity-pool.yml)}
+  # API Gateway Errors
+  - ${file(resources/api-gateway-errors.yml)}
+  # API Gateway Authorizer
+  - ${file(resources/api-gateway-authorizer.yml)}
+  # DynamoDB
+  - ${file(resources/dynamodb-table.yml)}

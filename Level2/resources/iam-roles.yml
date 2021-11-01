@@ -1,0 +1,352 @@
+Resources:
+  # IAM role used for authenticated users of the Cognito Identity Pool
+  CognitoAuthRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: Level2-${self:provider.stage}-CognitoAuthRole
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Federated: "cognito-identity.amazonaws.com"
+            Action:
+              - "sts:AssumeRoleWithWebIdentity"
+            Condition:
+              StringEquals:
+                "cognito-identity.amazonaws.com:aud":
+                  Ref: CognitoIdentityPool
+              "ForAnyValue:StringLike":
+                "cognito-identity.amazonaws.com:amr": authenticated
+      Policies:
+        - PolicyName: "CognitoAuthorizedPolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "mobileanalytics:PutEvents"
+                  - "cognito-sync:*"
+                  - "cognito-identity:*"
+                Resource: "*"
+
+              # Allow users to invoke our API
+              - Effect: "Allow"
+                Action:
+                  - "execute-api:Invoke"
+                Resource:
+                  Fn::Join:
+                    - ""
+                    - - "arn:aws:execute-api:"
+                      - Ref: AWS::Region
+                      - ":"
+                      - Ref: AWS::AccountId
+                      - ":"
+                      - Ref: ApiGatewayRestApi
+                      - "/*"
+  # IAM role used for unauthenticated users of the Cognito Identity Pool
+  CognitoUnAuthRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: Level2-${self:provider.stage}-CognitoUnAuthRole
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Federated: "cognito-identity.amazonaws.com"
+            Action:
+              - "sts:AssumeRoleWithWebIdentity"
+            Condition:
+              StringEquals:
+                "cognito-identity.amazonaws.com:aud":
+                  Ref: CognitoIdentityPool
+              "ForAnyValue:StringLike":
+                "cognito-identity.amazonaws.com:amr": unauthenticated
+      Policies:
+        - PolicyName: "CognitoUnAuthorizedPolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "mobileanalytics:PutEvents"
+                  - "cognito-sync:*"
+                Resource: "*"
+  #IMPORTANT: All Lambda functions by default will use this role. The only permissions
+  #allowed are to create Cloudwatch log outputs and to be able to assume a role that is
+  #passed via the Cognito Authorizer. Now different users can be put under different
+  #IAM roles via Cognito User Groups which will allow us to be able to precisely control
+  #which actions a lambda function can do via the API gateway
+  AllLambdaFunctionsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: Level2-${self:provider.stage}-AllLambdaFunctionsRole
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: [lambda.amazonaws.com]
+            Action:
+              - sts:AssumeRole
+              - sts:AssumeRoleWithWebIdentity
+      Policies:
+        - PolicyName: "AllLambdaFunctionsRolePolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sts:AssumeRole
+                  - sts:AssumeRoleWithSAML
+                  - sts:AssumeRoleWithWebIdentity
+                Resource:
+                  - "Fn::Join":
+                      - ":"
+                      - - "arn:aws:iam:"
+                        - Ref: "AWS::AccountId"
+                        - "role/Level2-${self:provider.stage}-*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - "Fn::Join":
+                      - ":"
+                      - - "arn:aws:logs"
+                        - Ref: "AWS::Region"
+                        - Ref: "AWS::AccountId"
+                        - "log-group:/aws/lambda/*:*:*"
+
+  #IMPORTANT: Any lambda function that is invoked by a user belonging to the
+  #DemoAdministrators user group will have to assume this role before making
+  #any administrative changes. Otherwise the Lambda function will fail
+  # To ensure only authorized actions by this role are carried out
+  CognitoUserPoolAdminGroupRole:
+    Type: AWS::IAM::Role
+    DependsOn: AllLambdaFunctionsRole
+    Properties:
+      RoleName: Level2-${self:provider.stage}-CognitoUserPoolAdminGroupRole
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+              AWS:
+                - "Fn::Join":
+                    - ":"
+                    - - "arn:aws:iam:"
+                      - Ref: "AWS::AccountId"
+                      - "role/Level2-${self:provider.stage}-AllLambdaFunctionsRole"
+            Action:
+              - "sts:AssumeRole"
+              - "sts:AssumeRoleWithWebIdentity"
+            #Condition:
+            #  StringEquals:
+            #    "sts:ExternalId": "9edb3c3a-f1e4-4cac-946d-aa579cc6bc25"
+      Policies:
+        - PolicyName: "CognitoUserPoolAdminGroupRolePolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "dynamodb:BatchGetItem"
+                  - "dynamodb:GetItem"
+                  - "dynamodb:Query"
+                  - "dynamodb:Scan"
+                  - "dynamodb:BatchWriteItem"
+                  - "dynamodb:PutItem"
+                  - "dynamodb:UpdateItem"
+                Resource:
+                  - "Fn::GetAtt": [DemoTable, Arn]
+              - Effect: Allow
+                Action:
+                  - lambda:GetAccountSettings
+                  - lambda:GetAccountSettings
+                  - lambda:GetEventSourceMapping
+                  - lambda:GetFunction
+                  - lambda:GetFunctionConfiguration
+                  - lambda:GetFunctionCodeSigningConfig
+                  - lambda:GetFunctionConcurrency           
+                  - lambda:ListEventSourceMappings
+                  - lambda:ListFunctions
+                  - lambda:ListTags
+                  - iam:ListRoles
+                Resource: "*"                  
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - "Fn::Join":
+                      - ":"
+                      - - "arn:aws:logs"
+                        - Ref: "AWS::Region"
+                        - Ref: "AWS::AccountId"
+                        - "log-group:/aws/lambda/*:*:*"
+              - Effect: Allow
+                Action:
+                  - "cognito-idp:GetUser"
+                  - "cognito-idp:UpdateUserAttributes"
+                Resource:
+                  - {
+                      "Fn::Join":
+                        [
+                          "",
+                          [
+                            "arn:aws:cognito-idp:",
+                            { Ref: "AWS::Region" },
+                            ":",
+                            { Ref: "AWS::AccountId" },
+                            ":userpool/*",
+                          ],
+                        ],
+                    }
+  #IMPORTANT: Any lambda function that is invoked by a user belonging to the
+  #DemoCustomers user group will have to assume this role before making
+  #changes to the DynamoDB Tables. Otherwise the Lambda function will fail
+  # To ensure only authorized actions by this role are carried out
+  CognitoUserPoolCustomerGroupRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: Level2-${self:provider.stage}-CognitoUserPoolCustomerGroupRole
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Federated: "cognito-identity.amazonaws.com"
+            Action:
+              - "sts:AssumeRoleWithWebIdentity"
+            Condition:
+              StringEquals:
+                "cognito-identity.amazonaws.com:aud":
+                  Ref: CognitoIdentityPool
+              "ForAnyValue:StringLike":
+                "cognito-identity.amazonaws.com:amr": authenticated
+      Policies:
+        - PolicyName: "CognitoUserPoolCustomerGroupRolePolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "dynamodb:BatchGetItem"
+                  - "dynamodb:GetItem"
+                  - "dynamodb:Query"
+                  - "dynamodb:Scan"
+                  - "dynamodb:BatchWriteItem"
+                  - "dynamodb:PutItem"
+                  - "dynamodb:UpdateItem"
+                Resource:
+                  - "Fn::GetAtt": [DemoTable, Arn]
+              - Effect: Allow
+                Action:
+                  - lambda:GetAccountSettings
+                  - lambda:GetAccountSettings
+                  - lambda:GetEventSourceMapping
+                  - lambda:GetFunction
+                  - lambda:GetFunctionConfiguration
+                  - lambda:GetFunctionCodeSigningConfig
+                  - lambda:GetFunctionConcurrency           
+                  - lambda:ListEventSourceMappings
+                  - lambda:ListFunctions
+                  - lambda:ListTags
+                  - iam:ListRoles
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - "Fn::Join":
+                      - ":"
+                      - - "arn:aws:logs"
+                        - Ref: "AWS::Region"
+                        - Ref: "AWS::AccountId"
+                        - "log-group:/aws/lambda/*:*:*"
+              - Effect: Allow
+                Action:
+                  - "cognito-idp:GetUser"
+                  - "cognito-idp:UpdateUserAttributes"
+                Resource:
+                  - {
+                      "Fn::Join":
+                        [
+                          "",
+                          [
+                            "arn:aws:cognito-idp:",
+                            { Ref: "AWS::Region" },
+                            ":",
+                            { Ref: "AWS::AccountId" },
+                            ":userpool/*",
+                          ],
+                        ],
+                    }
+
+  #IMPORTANT: This role is used only by the Post Confirmation Lambda Trigger
+  # to enable Lambda to add a user to the appropriate group when the user
+  # signs up. We can create multiple groups now in Cognito to handle
+  # different settings.
+  # IAM role used by Lambda for adding user to group
+  CognitoLambdaSignupUserRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: Level2-${self:provider.stage}-CognitoLambdaSignupUserRole
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: [lambda.amazonaws.com]
+            Action:
+              - sts:AssumeRole
+              - sts:AssumeRoleWithWebIdentity
+      Policies:
+        - PolicyName: "CognitoLambdaSignupUserRolePolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cognito-idp:AdminAddUserToGroup
+                  - cognito-idp:AdminRemoveUserFromGroup
+                Resource:
+                  - {
+                      "Fn::Join":
+                        [
+                          "",
+                          [
+                            "arn:aws:cognito-idp:",
+                            { Ref: "AWS::Region" },
+                            ":",
+                            { Ref: "AWS::AccountId" },
+                            ":userpool/*",
+                          ],
+                        ],
+                    }
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - "Fn::Join":
+                      - ":"
+                      - - "arn:aws:logs"
+                        - Ref: "AWS::Region"
+                        - Ref: "AWS::AccountId"
+                        - "log-group:/aws/lambda/*:*:*"

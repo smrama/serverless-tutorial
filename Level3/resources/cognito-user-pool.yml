@@ -1,0 +1,156 @@
+Resources:
+  CognitoUserPoolMyUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      # Generate a name based on the stage
+      UserPoolName: Level3-${self:provider.stage}-userpool
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+        InviteMessageTemplate:
+          EmailMessage: "Your username is {username} and temporary password is {####}. "
+          EmailSubject: Your temporary password
+          SMSMessage: "Your username is {username} and temporary password is {####}. "
+        UnusedAccountValidityDays: 1
+      AliasAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      EmailConfiguration:
+        EmailSendingAccount: DEVELOPER
+        ReplyToEmailAddress:  # email address
+        SourceArn: # SES ARN
+      EmailVerificationMessage: "Your verification code is <h1>{####}</h1>. "
+      EmailVerificationSubject: Your verification code
+      LambdaConfig: {}
+      MfaConfiguration: OFF
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          RequireUppercase: true
+      Schema:
+        - Name: sub
+          AttributeDataType: String
+          Mutable: false
+          Required: true
+          StringAttributeConstraints:
+            MaxLength: "2048"
+            MinLength: "1"
+        - Name: given_name
+          AttributeDataType: String
+          Mutable: true
+          Required: true
+          StringAttributeConstraints:
+            MaxLength: "2048"
+            MinLength: "0"
+        - Name: family_name
+          AttributeDataType: String
+          Mutable: true
+          Required: true
+          StringAttributeConstraints:
+            MaxLength: "2048"
+            MinLength: "0"
+        - Name: email
+          AttributeDataType: String
+          Mutable: true
+          Required: true
+          StringAttributeConstraints:
+            MaxLength: "2048"
+            MinLength: "0"
+      SmsAuthenticationMessage: "Your authentication code is {####}. "
+      SmsVerificationMessage: "Your verification code is {####}. "
+      UserPoolTags: {}
+      VerificationMessageTemplate:
+        DefaultEmailOption: CONFIRM_WITH_CODE
+        EmailMessage: "Your verification code is <h1>{####}</h1>. "
+        EmailMessageByLink:
+          "Please click the link below to verify your email address.
+          {##Verify Email##} "
+        EmailSubject: Your verification code
+        EmailSubjectByLink: Your verification link
+        SmsMessage: "Your verification code is {####}. "
+  CognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      AllowedOAuthFlowsUserPoolClient: false
+      ClientName: Level3-${self:provider.stage}-userpool-client
+      ExplicitAuthFlows:
+        - ALLOW_ADMIN_USER_PASSWORD_AUTH
+        - ALLOW_CUSTOM_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_USER_SRP_AUTH
+      ReadAttributes:
+        - address
+        - birthdate
+        - email
+        - email_verified
+        - family_name
+        - gender
+        - given_name
+        - locale
+        - middle_name
+        - name
+        - nickname
+        - phone_number
+        - phone_number_verified
+        - picture
+        - preferred_username
+        - profile
+        - updated_at
+        - website
+        - zoneinfo
+      RefreshTokenValidity: 30
+      UserPoolId:
+        Ref: CognitoUserPoolMyUserPool
+      GenerateSecret: false
+      WriteAttributes:
+        - address
+        - birthdate
+        - email
+        - family_name
+        - gender
+        - given_name
+        - locale
+        - middle_name
+        - name
+        - nickname
+        - phone_number
+        - picture
+        - preferred_username
+        - profile
+        - updated_at
+        - website
+        - zoneinfo
+  #All users who register themselves as Super Admin
+  CognitoUserPoolGroupA:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      Description: "Administration Group"
+      GroupName: "DemoAdministrators"
+      RoleArn:
+        Fn::GetAtt: [CognitoUserPoolAdminGroupRole, Arn]
+      UserPoolId:
+        Ref: CognitoUserPoolMyUserPool #Refers to the user pool created above
+  #All users who register when invited by the Super Admin and have Supervisor Access
+  CognitoUserPoolGroupB:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      Description: "Customers Group"
+      GroupName: "DemoCustomers"
+      RoleArn:
+        Fn::GetAtt: [CognitoUserPoolCustomerGroupRole, Arn] # IMPORTANT: Change this to reflect different access permission roles later
+      UserPoolId:
+        Ref: CognitoUserPoolMyUserPool #Refers to the user pool created above
+
+# Print out the Id of the User Pool that is created
+Outputs:
+  UserPoolId:
+    Value:
+      Ref: CognitoUserPoolMyUserPool
+
+  UserPoolClientId:
+    Value:
+      Ref: CognitoUserPoolClient

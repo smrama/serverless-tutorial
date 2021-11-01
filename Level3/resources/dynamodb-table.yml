@@ -1,0 +1,13 @@
+Resources:
+  DemoTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: ${env:demoTableName}
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+      # Set the capacity to auto-scale
+      BillingMode: PAY_PER_REQUEST

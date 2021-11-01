@@ -1,0 +1,75 @@
+# NOTE: update this with your service name
+service: Level1
+
+# Create an optimized package for our functions
+package:
+  individually: true
+
+plugins:
+  - serverless-bundle # Package our functions with Webpack
+  - serverless-offline
+  - serverless-dotenv-plugin # Load .env as environment variables
+
+provider:
+  name: aws
+  runtime: nodejs12.x
+  region: eu-west-2
+  profile: default
+  stage: ${opt:stage,'dev'}
+  tracing: true
+  variablesResolutionMode: 20210326
+  lambdaHashingVersion: 20201221
+  logs:
+    restApi: true
+  deploymentBucket:
+    name: # Bucket name
+    serverSideEncryption: AES256
+  environment:
+    region: ${self:provider.region}
+  # 'iamRoleStatements' defines the permission policy for the Lambda function.
+  # In this case Lambda functions are granted with permissions to access DynamoDB.
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:DescribeTable
+        - dynamodb:Query
+        - dynamodb:Scan
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+        - dynamodb:UpdateItem
+        - dynamodb:DeleteItem
+      Resource: "arn:aws:dynamodb:eu-west-2:*:*"
+    - Effect: Allow
+      Action:
+        - lambda:GetAccountSettings
+        - lambda:GetAccountSettings
+        - lambda:GetEventSourceMapping
+        - lambda:GetFunction
+        - lambda:GetFunctionConfiguration
+        - lambda:GetFunctionCodeSigningConfig
+        - lambda:GetFunctionConcurrency           
+        - lambda:ListEventSourceMappings
+        - lambda:ListFunctions
+        - lambda:ListTags
+        - iam:ListRoles
+      Resource: "*"
+
+functions:
+  hello:
+    handler: handler.hello
+    events:
+      - http:
+          path: hello
+          method: get
+  #Add the following to the serverless.yml file under functions
+  create:
+    handler: create.main
+    events:
+      - http:
+          path: demo
+          method: post
+
+# Create our resources with separate CloudFormation templates
+resources:
+  # DynamoDB
+  - ${file(resources/dynamodb-table.yml)}

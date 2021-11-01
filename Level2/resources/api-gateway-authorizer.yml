@@ -1,0 +1,30 @@
+Resources:
+  CognitoUserPoolAuthorizer:
+    Type: AWS::ApiGateway::Authorizer
+    Properties:
+      AuthorizerResultTtlInSeconds: 10
+      IdentitySource: method.request.header.Authorization
+      Name: Level2-${self:provider.stage}-CognitoAuthorizer
+      RestApiId:
+        Ref: "ApiGatewayRestApi"
+      Type: COGNITO_USER_POOLS
+      ProviderARNs:
+        - {
+            "Fn::Join":
+              [
+                "",
+                [
+                  "arn:aws:cognito-idp:",
+                  { Ref: "AWS::Region" },
+                  ":",
+                  { Ref: "AWS::AccountId" },
+                  ":userpool/",
+                  Ref: CognitoUserPoolMyUserPool,
+                ],
+              ],
+          }
+# Print out the name of the Authorizer that is created
+Outputs:
+  CognitoUserPoolAuthorizerName:
+    Value:
+      Ref: CognitoUserPoolAuthorizer
